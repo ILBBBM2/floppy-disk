@@ -112,7 +112,7 @@ void SpawnMovingBox(std::vector<Box> &redBoxes, const Camera &camera) {
     while (!validSpawn) {
         movingBox.position = (Vector3){
             GetRandomValue(-10, 10), //x pos
-            2.0f,                    //y pos (rn its just a fixed value)
+            (float)GetRandomValue(1, 5),                    //y pos (rn its just a fixed value)
             GetRandomValue(-10, 10) //z pos
         };
 
