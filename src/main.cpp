@@ -178,6 +178,19 @@ int main(void)
     
     while (!WindowShouldClose())
     {
+        if (IsKeyPressed(KEY_F4)) {
+            aimlabs = false;
+            //std::cout << "og fort";
+            ResetGame(shots, hits, accuracy, redBoxes);
+            for (int i = 0; i < 5; i++) {
+                //repsawn the reb boxes
+                redBoxes.push_back({ 
+                    (Vector3){ GetRandomValue(-10, 10), GetRandomValue(2, 5), GetRandomValue(-10, 10) }, 
+                    true 
+                });
+            }
+        }
+
         //std::cout<< "bruh";
         if (IsKeyPressed(KEY_F5)) {
             aimlabs = true;
