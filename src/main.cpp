@@ -130,7 +130,7 @@ void SpawnMovingBox(std::vector<Box> &redBoxes, const Camera &camera) {
 
     movingBox.isActive = true;
     movingBox.velocity = (Vector3){ GetRandomValue(0, 1) == 0 ? -2.0f : 2.0f, 0.0f, 0.0f }; //moving shitttt
-    movingBox.health = 3; //how many seconds HEAVY APPROXIMATION
+    movingBox.health = 2; //how many seconds HEAVY APPROXIMATION
     redBoxes.push_back(movingBox);
 }
 
@@ -194,7 +194,7 @@ int main(void)
         //std::cout<< "bruh";
         if (IsKeyPressed(KEY_F5)) {
             aimlabs = true;
-            std::cout << "aimlabs mode activated";
+            //std::cout << "aimlabs mode activated";
             ResetGame(shots, hits, accuracy, redBoxes);
             SpawnMovingBox(redBoxes, camera); // Pass the camera to restrict spawn area
         }
@@ -352,7 +352,7 @@ int main(void)
         //playerPosition.z = camera.position.z;
 
         //shots
-        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !aimlabs)
         {
             if(cameraMode == CAMERA_FIRST_PERSON){
                 Ray ray = GetMouseRay((Vector2){screenWidth / 2, screenHeight / 2}, camera);
@@ -397,7 +397,7 @@ int main(void)
             }
             
         }
-        
+        //std::cout << "bruh";
         if(bruh == 1){
             isshowinggraph = false;
             bruh = 0;
