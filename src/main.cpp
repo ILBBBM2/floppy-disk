@@ -146,15 +146,15 @@ void SpawnMovingBox(std::vector<Box> &redBoxes, const Camera &camera) {
 }
 
 
-// Removed duplicate definition of UpdateLightValues
-// Light type
+
+//light types
 typedef enum {
     LIGHT_DIRECTIONAL = 0,
     LIGHT_POINT,
     LIGHT_SPOT
 } LightType;
 
-// Light data
+//light data
 typedef struct {
     int type;
     int enabled;
@@ -163,7 +163,7 @@ typedef struct {
     float color[4];
     float intensity;
 
-    // Shader light parameters locations
+    //shader lgithe parameter locs
     int typeLoc;
     int enabledLoc;
     int positionLoc;
@@ -172,15 +172,10 @@ typedef struct {
     int intensityLoc;
 } Light;
 
-//----------------------------------------------------------------------------------
-// Global Variables Definition
-//----------------------------------------------------------------------------------
-static int lightCount = 0;     // Current number of dynamic lights that have been created
 
-//----------------------------------------------------------------------------------
-// Module specific Functions Declaration
-//----------------------------------------------------------------------------------
-// Create a light and get shader locations
+static int lightCount = 0;     
+
+
 
 void UpdateLightValues(Shader shader, Light light) {
     SetShaderValue(shader, light.enabledLoc, &light.enabled, SHADER_UNIFORM_INT);
@@ -194,6 +189,12 @@ void UpdateLightValues(Shader shader, Light light) {
 
     SetShaderValue(shader, light.colorLoc, light.color, SHADER_UNIFORM_VEC4);
     SetShaderValue(shader, light.intensityLoc, &light.intensity, SHADER_UNIFORM_FLOAT);
+    SetShaderValue(shader, light.positionLoc, position, SHADER_UNIFORM_VEC3);
+    SetShaderValue(shader, light.colorLoc, light.color, SHADER_UNIFORM_VEC4);
+    SetShaderValue(shader, light.intensityLoc, &light.intensity, SHADER_UNIFORM_FLOAT);
+    int ambientLoc = GetShaderLocation(shader, "ambient");
+    SetShaderValue(shader, ambientLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
+    
 }
 // Update light properties on shader
 // NOTE: Light shader locations should be available
@@ -211,7 +212,7 @@ static Light CreateLight(int type, Vector3 position, Vector3 target, Color color
         light.color[3] = (float)color.a / 255.0f;
         light.intensity = intensity;
 
-        // Get shader locations for the light
+        //get shader locs for light
         light.enabledLoc = GetShaderLocation(shader, TextFormat("lights[%i].enabled", lightCount));
         light.typeLoc = GetShaderLocation(shader, TextFormat("lights[%i].type", lightCount));
         light.positionLoc = GetShaderLocation(shader, TextFormat("lights[%i].position", lightCount));
@@ -220,7 +221,7 @@ static Light CreateLight(int type, Vector3 position, Vector3 target, Color color
         light.intensityLoc = GetShaderLocation(shader, TextFormat("lights[%i].intensity", lightCount));
 
         UpdateLightValues(shader, light);
-
+        
         lightCount++;
     }
 
@@ -251,6 +252,7 @@ int main(void)
     Model groundModel = LoadModelFromMesh(groundMesh);
     groundModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = groundTexture;
     boxModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = boxTexture;   
+    
     Camera camera = { 0 };
     camera.position = (Vector3){ 0.0f, 2.0f, 4.0f };   
     camera.target = (Vector3){ 0.0f, 2.0f, 0.0f };      
@@ -298,6 +300,9 @@ int main(void)
     SetShaderValue(shader, shader.locs[SHADER_LOC_VECTOR_VIEW], cameraPos, SHADER_UNIFORM_VEC3);
     for (int i = 0; i < MAX_LIGHTS; i++) UpdateLightValues(shader, lights[i]);
 
+
+    
+    
     
     for (int i = 0; i < 5; i++) {
         redBoxes.push_back({ (Vector3){ GetRandomValue(-10, 10), GetRandomValue(2, 5), GetRandomValue(-10, 10) }, true });
