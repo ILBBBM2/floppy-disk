@@ -1,11 +1,21 @@
 #include "raylib.h"
-#include "rcamera.h"
 #include "raymath.h"
+
+#define RLIGHTS_IMPLEMENTATION
+//#include "rlights.h"
+#if defined(PLATFORM_DESKTOP)
+    #define GLSL_VERSION            330
+#else 
+    #define GLSL_VERSION            100
+#endif
 #include <iostream>
 #include <vector>
 #include <algorithm>
 #include <fstream>
 #include <string>
+#define MAX_LIGHTS  4
+
+
 
 struct Box {
     Vector3 position;
@@ -96,6 +106,7 @@ void ResetGame(float &shots, float &hits, float &accuracy, std::vector<Box> &red
     accuracy = 100;
     for (auto& box : redBoxes) {
         box.position = (Vector3){ GetRandomValue(-10, 10), GetRandomValue(2, 5), GetRandomValue(-10, 10) };
+        
         box.isActive = true;
     }
 }
@@ -135,6 +146,87 @@ void SpawnMovingBox(std::vector<Box> &redBoxes, const Camera &camera) {
 }
 
 
+// Removed duplicate definition of UpdateLightValues
+// Light type
+typedef enum {
+    LIGHT_DIRECTIONAL = 0,
+    LIGHT_POINT,
+    LIGHT_SPOT
+} LightType;
+
+// Light data
+typedef struct {
+    int type;
+    int enabled;
+    Vector3 position;
+    Vector3 target;
+    float color[4];
+    float intensity;
+
+    // Shader light parameters locations
+    int typeLoc;
+    int enabledLoc;
+    int positionLoc;
+    int targetLoc;
+    int colorLoc;
+    int intensityLoc;
+} Light;
+
+//----------------------------------------------------------------------------------
+// Global Variables Definition
+//----------------------------------------------------------------------------------
+static int lightCount = 0;     // Current number of dynamic lights that have been created
+
+//----------------------------------------------------------------------------------
+// Module specific Functions Declaration
+//----------------------------------------------------------------------------------
+// Create a light and get shader locations
+
+void UpdateLightValues(Shader shader, Light light) {
+    SetShaderValue(shader, light.enabledLoc, &light.enabled, SHADER_UNIFORM_INT);
+    SetShaderValue(shader, light.typeLoc, &light.type, SHADER_UNIFORM_INT);
+
+    float position[3] = { light.position.x, light.position.y, light.position.z };
+    SetShaderValue(shader, light.positionLoc, position, SHADER_UNIFORM_VEC3);
+
+    float target[3] = { light.target.x, light.target.y, light.target.z };
+    SetShaderValue(shader, light.targetLoc, target, SHADER_UNIFORM_VEC3);
+
+    SetShaderValue(shader, light.colorLoc, light.color, SHADER_UNIFORM_VEC4);
+    SetShaderValue(shader, light.intensityLoc, &light.intensity, SHADER_UNIFORM_FLOAT);
+}
+// Update light properties on shader
+// NOTE: Light shader locations should be available
+static Light CreateLight(int type, Vector3 position, Vector3 target, Color color, float intensity, Shader shader) {
+    Light light = { 0 };
+
+    if (lightCount < MAX_LIGHTS) {
+        light.enabled = 1;
+        light.type = type;
+        light.position = position;
+        light.target = target;
+        light.color[0] = (float)color.r / 255.0f;
+        light.color[1] = (float)color.g / 255.0f;
+        light.color[2] = (float)color.b / 255.0f;
+        light.color[3] = (float)color.a / 255.0f;
+        light.intensity = intensity;
+
+        // Get shader locations for the light
+        light.enabledLoc = GetShaderLocation(shader, TextFormat("lights[%i].enabled", lightCount));
+        light.typeLoc = GetShaderLocation(shader, TextFormat("lights[%i].type", lightCount));
+        light.positionLoc = GetShaderLocation(shader, TextFormat("lights[%i].position", lightCount));
+        light.targetLoc = GetShaderLocation(shader, TextFormat("lights[%i].target", lightCount));
+        light.colorLoc = GetShaderLocation(shader, TextFormat("lights[%i].color", lightCount));
+        light.intensityLoc = GetShaderLocation(shader, TextFormat("lights[%i].intensity", lightCount));
+
+        UpdateLightValues(shader, light);
+
+        lightCount++;
+    }
+
+    return light;
+}
+
 
 
 int main(void)
@@ -144,8 +236,20 @@ int main(void)
     bool aimlabs = false;
     InitWindow(screenWidth, screenHeight, "hawk tuah!");
     Texture2D boxTexture = LoadTexture("assets/box.png");
+    Texture2D groundTexture = LoadTexture("assets/ground.png");
+    Texture2D wallTexture = LoadTexture("assets/wall.png");
     Mesh cubeMesh = GenMeshCube(1.0f, 1.0f, 1.0f);
     Model boxModel = LoadModelFromMesh(cubeMesh);
+    Mesh wallMesh = GenMeshCube(1.0f, 10.0f, 100.0f);
+    Mesh wallMesh2 = GenMeshCube(50.00f, 10.0f, 1.0f);
+    Model wallModel = LoadModelFromMesh(wallMesh);
+    Model wallModel2 = LoadModelFromMesh(wallMesh2);
+    wallModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = wallTexture;
+    wallModel2.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = wallTexture;
+    // Create a plane model for the ground
+    Mesh groundMesh = GenMeshPlane(1000.0f, 1000.0f, 1, 1);
+    Model groundModel = LoadModelFromMesh(groundMesh);
+    groundModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = groundTexture;
     boxModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = boxTexture;   
     Camera camera = { 0 };
     camera.position = (Vector3){ 0.0f, 2.0f, 4.0f };   
@@ -169,6 +273,32 @@ int main(void)
     int bruh = 0;
     bool isshowinggraph = false;
     std::vector<Box> redBoxes;
+    Light burstLight;          
+    bool burstLightActive = false; 
+    float burstLightTimer = 0.0f;
+    Shader shader = LoadShader(TextFormat("assets/lighting.vs", GLSL_VERSION),
+                           TextFormat("assets/lighting.fs", GLSL_VERSION));
+    shader.locs[SHADER_LOC_VECTOR_VIEW] = GetShaderLocation(shader, "viewPos");
+    int ambientLoc = GetShaderLocation(shader, "ambient");
+    SetShaderValue(shader, ambientLoc, (float[4]){ 0.1f, 0.1f, 0.1f, 1.0f }, SHADER_UNIFORM_VEC4);
+    Light lights[MAX_LIGHTS] = { 0 };
+    //Light sunLight = CreateLight(LIGHT_DIRECTIONAL, (Vector3){ 0.0f, 1.0f, 0.0f }, (Vector3){ 0.0f, -1.0f, 0.0f }, WHITE, shader);
+    SetShaderValue(shader, ambientLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
+    //UpdateLightValues(shader, sunLight);
+    //lights[0] = CreateLight(LIGHT_POINT, (Vector3){ -2, 1, -2 }, Vector3Zero(), YELLOW, shader);
+    lights[1] = CreateLight(LIGHT_POINT, (Vector3){ 2.0f, 1.0f, 1.0f }, Vector3Zero(), GREEN, 0.5f, shader);
+    UpdateLightValues(shader, lights[1]);
+    //lights[2] = CreateLight(LIGHT_POINT, (Vector3){ -2, 1, 2 }, Vector3Zero(), GREEN, shader);
+    //lights[3] = CreateLight(LIGHT_POINT, (Vector3){ 2, 1, -2 }, Vector3Zero(), BLUE, shader);
+    burstLight = CreateLight(LIGHT_POINT, camera.position, Vector3Zero(), WHITE,3.0f ,shader);
+    burstLight.enabled = false; // Initially disabled
+    UpdateLightValues(shader, burstLight);
+    //UpdateLightValues(shader, sunLight);
+    float cameraPos[3] = { camera.position.x, camera.position.y, camera.position.z };
+    SetShaderValue(shader, shader.locs[SHADER_LOC_VECTOR_VIEW], cameraPos, SHADER_UNIFORM_VEC3);
+    for (int i = 0; i < MAX_LIGHTS; i++) UpdateLightValues(shader, lights[i]);
+
+    
     for (int i = 0; i < 5; i++) {
         redBoxes.push_back({ (Vector3){ GetRandomValue(-10, 10), GetRandomValue(2, 5), GetRandomValue(-10, 10) }, true });
     }
@@ -196,7 +326,7 @@ int main(void)
             aimlabs = true;
             //std::cout << "aimlabs mode activated";
             ResetGame(shots, hits, accuracy, redBoxes);
-            SpawnMovingBox(redBoxes, camera); // Pass the camera to restrict spawn area
+            SpawnMovingBox(redBoxes, camera);
         }
         if (IsKeyPressed(KEY_F1))
         {
@@ -253,8 +383,8 @@ int main(void)
                 camera.up = (Vector3){ 0.0f, 100.0f, 0.0f };
                 camera.projection = CAMERA_ORTHOGRAPHIC;
                 camera.fovy = 20.0f;
-                CameraYaw(&camera, -135 * DEG2RAD, true);
-                CameraPitch(&camera, -45 * DEG2RAD, true, true, false);
+                //CameraYaw(&camera, -135 * DEG2RAD, true);
+                //CameraPitch(&camera, -45 * DEG2RAD, true, true, false);
             }
             else if (camera.projection == CAMERA_ORTHOGRAPHIC)
             {
@@ -307,18 +437,18 @@ int main(void)
                     damageTimer += GetFrameTime();
                     hits ++;
 
-                    if (damageTimer >= 1.0f) { // Apply damage every second
+                    if (damageTimer >= 1.0f) {
                         movingBox.health -= 1;
                         damageTimer = 0.0f;
                         if (movingBox.health <= 0) {
                             movingBox.isActive = false;
                             hits += 1;
-                            accuracy = (hits / (shots + 1)) * 100; // Update accuracy
-                            SpawnMovingBox(redBoxes, camera); // Respawn the moving box
+                            accuracy = (hits / (shots + 1)) * 100;
+                            SpawnMovingBox(redBoxes, camera);
                         }
                     }
                 } else {
-                    damageTimer = 0.0f; // Reset timer if the laser is not hitting the box
+                    damageTimer = 0.0f;
                 }
             }
         }
@@ -350,7 +480,7 @@ int main(void)
         //camera.position.y = playerPosition.y + 1.0f;
         //playerPosition.x = camera.position.x;
         //playerPosition.z = camera.position.z;
-
+        
         //shots
         if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !aimlabs)
         {
@@ -358,6 +488,11 @@ int main(void)
                 Ray ray = GetMouseRay((Vector2){screenWidth / 2, screenHeight / 2}, camera);
             shots += 1;
             
+            burstLight.position = camera.position;
+            burstLight.enabled = true;
+            burstLightTimer = 0.0f;
+            UpdateLightValues(shader, burstLight);
+
             for (auto& box : redBoxes)
             {
                 BoundingBox boxBounds = { (Vector3){ box.position.x - 0.5f, box.position.y - 0.5f, box.position.z - 0.5f },
@@ -375,6 +510,13 @@ int main(void)
             }
             }
             
+        }
+        if (burstLight.enabled) {
+            burstLightTimer += GetFrameTime();
+            if (burstLightTimer >= 0.2f) {
+                burstLight.enabled = false;
+                UpdateLightValues(shader, burstLight);
+            }
         }
         if(shots > 0){
             accuracy = (hits/shots) * 100;
@@ -425,11 +567,17 @@ int main(void)
                 ClearBackground(RAYWHITE);
 
                 BeginMode3D(camera);
-
+                    BeginShaderMode(shader);
+                    //DrawSphere((Vector3){ 0.0f, 10.0f, 0.0f }, 0.5f, YELLOW);
+                    //for (int i = 0; i < MAX_LIGHTS; i++) {
+                    // Draw the ground with a texture
+                    //DrawModel(groundModel, (Vector3){ 0.0f, 0.0f, 0.0f }, 1.0f, WHITE);
                     DrawPlane((Vector3){ 0.0f, 0.0f, 0.0f }, (Vector2){ 1000.0f, 1000.0f }, LIGHTGRAY); // Floor
-                    DrawCube((Vector3){ -16.0f, 2.5f, 0.0f }, 1.0f, 5.0f, 32.0f, BLUE); // Blue wall
-                    DrawCube((Vector3){ 16.0f, 2.5f, 0.0f }, 1.0f, 5.0f, 32.0f, LIME); // Green wall
-                    DrawCube((Vector3){ 0.0f, 2.5f, 16.0f }, 32.0f, 5.0f, 1.0f, GOLD); // Yellow wall
+                    //DrawSphereWires(lights[1].position, 0.2f, 8, 8, ColorAlpha(lights[1].color, 0.3f));
+                    // Draw the walls with textures
+                    DrawModel(wallModel, (Vector3){ -16.0f, 2.5f, 0.0f }, 1.0f, WHITE); // Blue wall
+                    DrawModel(wallModel, (Vector3){ 16.0f, 2.5f, 0.0f }, 1.0f, WHITE); // Green wall
+                    DrawModel(wallModel2, (Vector3){ 0.0f, 2.5f, 16.0f }, 1.0f, WHITE); // Yellow wall
                     //the movidng pillar
                     DrawCube(pillarPosition, pillarWidth, pillarHeight, pillarDepth, RED);
                     DrawCubeWires(pillarPosition, pillarWidth, pillarHeight, pillarDepth, MAROON);
