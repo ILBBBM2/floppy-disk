@@ -237,8 +237,9 @@ int main(void)
     bool aimlabs = false;
     InitWindow(screenWidth, screenHeight, "hawk tuah!");
     Texture2D boxTexture = LoadTexture("assets/box.png");
-    Texture2D groundTexture = LoadTexture("assets/ground.png");
-    Texture2D wallTexture = LoadTexture("assets/wall.png");
+    Texture2D groundTexture = LoadTexture("assets/box.png");
+    Texture2D wallTexture = LoadTexture("assets/box.png");
+    
     Mesh cubeMesh = GenMeshCube(1.0f, 1.0f, 1.0f);
     Model boxModel = LoadModelFromMesh(cubeMesh);
     Mesh wallMesh = GenMeshCube(1.0f, 10.0f, 100.0f);
@@ -278,30 +279,60 @@ int main(void)
     Light burstLight;          
     bool burstLightActive = false; 
     float burstLightTimer = 0.0f;
-    Shader shader = LoadShader(TextFormat("assets/lighting.vs", GLSL_VERSION),
-                           TextFormat("assets/lighting.fs", GLSL_VERSION));
+    // Load PBR shader and setup all required locations
+    Shader shader = LoadShader(TextFormat("assets/pbr.vs", GLSL_VERSION),
+                               TextFormat("assets/pbr.fs", GLSL_VERSION));
+    shader.locs[SHADER_LOC_MAP_ALBEDO] = GetShaderLocation(shader, "albedoMap");
+    Vector2 floorTextureTiling = (Vector2){ 10.0f, 10.0f }; // Increase tiling to repeat the texture more
+    // WARNING: Metalness, roughness, and ambient occlusion are all packed into a MRA texture
+    // They are passed as to the SHADER_LOC_MAP_METALNESS location for convenience,
+    // shader already takes care of it accordingly
+    shader.locs[SHADER_LOC_MAP_METALNESS] = GetShaderLocation(shader, "mraMap");
+    shader.locs[SHADER_LOC_MAP_NORMAL] = GetShaderLocation(shader, "normalMap");
+    // WARNING: Similar to the MRA map, the emissive map packs different information 
+    // into a single texture: it stores height and emission data
+    // It is binded to SHADER_LOC_MAP_EMISSION location an properly processed on shader
+    shader.locs[SHADER_LOC_MAP_EMISSION] = GetShaderLocation(shader, "emissiveMap");
+    shader.locs[SHADER_LOC_COLOR_DIFFUSE] = GetShaderLocation(shader, "albedoColor");
+
+    // Setup additional required shader locations, including lights data
     shader.locs[SHADER_LOC_VECTOR_VIEW] = GetShaderLocation(shader, "viewPos");
-    int ambientLoc = GetShaderLocation(shader, "ambient");
-    SetShaderValue(shader, ambientLoc, (float[4]){ 0.1f, 0.1f, 0.1f, 1.0f }, SHADER_UNIFORM_VEC4);
+    int lightCountLoc = GetShaderLocation(shader, "numOfLights");
+    int maxLightCount = MAX_LIGHTS;
+    SetShaderValue(shader, lightCountLoc, &maxLightCount, SHADER_UNIFORM_INT);
+
+    // Setup ambient color and intensity parameters
+    float ambientIntensity = 0.02f;
+    Color ambientColor = (Color){ 26, 32, 135, 255 };
+    Vector3 ambientColorNormalized = (Vector3){ ambientColor.r/255.0f, ambientColor.g/255.0f, ambientColor.b/255.0f };
+    SetShaderValue(shader, GetShaderLocation(shader, "ambientColor"), &ambientColorNormalized, SHADER_UNIFORM_VEC3);
+    SetShaderValue(shader, GetShaderLocation(shader, "ambient"), &ambientIntensity, SHADER_UNIFORM_FLOAT);
+
+    // Get location for shader parameters that can be modified in real time
+    int emissiveIntensityLoc = GetShaderLocation(shader, "emissivePower");
+    int emissiveColorLoc = GetShaderLocation(shader, "emissiveColor");
+    int textureTilingLoc = GetShaderLocation(shader, "tiling");
+
+    Model floor = LoadModel("assets/plane.glb");
+    floor.materials[0].shader = shader;
+    floor.materials[0].maps[MATERIAL_MAP_ALBEDO].color = WHITE;
+    floor.materials[0].maps[MATERIAL_MAP_METALNESS].value = 0.0f;
+    floor.materials[0].maps[MATERIAL_MAP_ROUGHNESS].value = 0.0f;
+    floor.materials[0].maps[MATERIAL_MAP_OCCLUSION].value = 1.0f;
+    floor.materials[0].maps[MATERIAL_MAP_EMISSION].color = BLACK;
+    floor.materials[0].maps[MATERIAL_MAP_ALBEDO].texture = LoadTexture("assets/road_a.png");
+    floor.materials[0].maps[MATERIAL_MAP_METALNESS].texture = LoadTexture("assets/road_mra.png");
+    floor.materials[0].maps[MATERIAL_MAP_NORMAL].texture = LoadTexture("assets/road_n.png");
+
+    floorTextureTiling = (Vector2){ 10.0f, 10.00f };
+
     Light lights[MAX_LIGHTS] = { 0 };
-    //Light sunLight = CreateLight(LIGHT_DIRECTIONAL, (Vector3){ 0.0f, 1.0f, 0.0f }, (Vector3){ 0.0f, -1.0f, 0.0f }, WHITE, shader);
-    SetShaderValue(shader, ambientLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
-    //UpdateLightValues(shader, sunLight);
-    //lights[0] = CreateLight(LIGHT_POINT, (Vector3){ -2, 1, -2 }, Vector3Zero(), YELLOW, shader);
-    lights[1] = CreateLight(LIGHT_POINT, (Vector3){ 2.0f, 1.0f, 1.0f }, Vector3Zero(), GREEN, 0.5f, shader);
-    UpdateLightValues(shader, lights[1]);
-    //lights[2] = CreateLight(LIGHT_POINT, (Vector3){ -2, 1, 2 }, Vector3Zero(), GREEN, shader);
-    //lights[3] = CreateLight(LIGHT_POINT, (Vector3){ 2, 1, -2 }, Vector3Zero(), BLUE, shader);
-    burstLight = CreateLight(LIGHT_POINT, camera.position, Vector3Zero(), WHITE,3.0f ,shader);
-    burstLight.enabled = false; // Initially disabled
-    UpdateLightValues(shader, burstLight);
-    //UpdateLightValues(shader, sunLight);
-    float cameraPos[3] = { camera.position.x, camera.position.y, camera.position.z };
-    SetShaderValue(shader, shader.locs[SHADER_LOC_VECTOR_VIEW], cameraPos, SHADER_UNIFORM_VEC3);
-    for (int i = 0; i < MAX_LIGHTS; i++) UpdateLightValues(shader, lights[i]);
-
-
-    
+    lights[0] = CreateLight(LIGHT_POINT, (Vector3){ -1.0f, 10.0f, -2.0f }, (Vector3){ 0.0f, 0.0f, 0.0f }, YELLOW, 100.0f, shader);
+    int usage = 1;
+    SetShaderValue(shader, GetShaderLocation(shader, "useTexAlbedo"), &usage, SHADER_UNIFORM_INT);
+    SetShaderValue(shader, GetShaderLocation(shader, "useTexNormal"), &usage, SHADER_UNIFORM_INT);
+    SetShaderValue(shader, GetShaderLocation(shader, "useTexMRA"), &usage, SHADER_UNIFORM_INT);
+    SetShaderValue(shader, GetShaderLocation(shader, "useTexEmissive"), &usage, SHADER_UNIFORM_INT);
     
     
     for (int i = 0; i < 5; i++) {
@@ -313,6 +344,12 @@ int main(void)
     
     while (!WindowShouldClose())
     {
+        float cameraPos[3] = {camera.position.x, camera.position.y, camera.position.z};
+        SetShaderValue(shader, shader.locs[SHADER_LOC_VECTOR_VIEW], cameraPos, SHADER_UNIFORM_VEC3);
+
+        UpdateLightValues(shader, lights[0]);
+
+
         if (IsKeyPressed(KEY_F4)) {
             aimlabs = false;
             //std::cout << "og fort";
@@ -577,7 +614,21 @@ int main(void)
                     //for (int i = 0; i < MAX_LIGHTS; i++) {
                     // Draw the ground with a texture
                     //DrawModel(groundModel, (Vector3){ 0.0f, 0.0f, 0.0f }, 1.0f, WHITE);
-                    DrawPlane((Vector3){ 0.0f, 0.0f, 0.0f }, (Vector2){ 1000.0f, 1000.0f }, LIGHTGRAY); // Floor
+                    //DrawPlane((Vector3){ 0.0f, 0.0f, 0.0f }, (Vector2){ 1000.0f, 1000.0f }, LIGHTGRAY); // Floor
+
+                    SetShaderValue(shader, textureTilingLoc, &floorTextureTiling, SHADER_UNIFORM_VEC2);
+                    Vector4 floorEmissiveColor = ColorNormalize(floor.materials[0].maps[MATERIAL_MAP_EMISSION].color);
+                    SetShaderValue(shader, emissiveColorLoc, &floorEmissiveColor, SHADER_UNIFORM_VEC4);
+
+                    DrawModel(floor, (Vector3){ 0.0f, 0.0f, 0.0f }, 100.0f, WHITE);   // Draw floor model
+
+                    // Set floor model texture tiling and emissive color parameters on shader
+                    //SetShaderValue(shader, textureTilingLoc, &floorTextureTiling, SHADER_UNIFORM_VEC2);
+                    //Vector4 floorEmissiveColor = ColorNormalize(floor.materials[0].maps[MATERIAL_MAP_EMISSION].color);
+                    //SetShaderValue(shader, emissiveColorLoc, &floorEmissiveColor, SHADER_UNIFORM_VEC4);
+//
+                    //DrawModel(floor, (Vector3){ 0.0f, 0.0f, 0.0f }, 5.0f, WHITE);   // Draw floor model
+
                     //DrawSphereWires(lights[1].position, 0.2f, 8, 8, ColorAlpha(lights[1].color, 0.3f));
                     // Draw the walls with textures
                     DrawModel(wallModel, (Vector3){ -16.0f, 2.5f, 0.0f }, 1.0f, WHITE); // Blue wall
@@ -604,7 +655,7 @@ int main(void)
                     //debug ray
                     Ray ray = GetMouseRay((Vector2){screenWidth / 2, screenHeight / 2}, camera);
                     DrawRay(ray, GREEN);
-
+                    EndShaderMode();
                 EndMode3D();
 
                 //crosshair
