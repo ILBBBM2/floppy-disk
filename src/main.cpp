@@ -138,7 +138,7 @@ void SpawnMovingBox(std::vector<Box> &redBoxes, const Camera &camera) {
             validSpawn = true;
         }
     }
-
+    //sdasdsadas
     movingBox.isActive = true;
     movingBox.velocity = (Vector3){ GetRandomValue(0, 1) == 0 ? -2.0f : 2.0f, 0.0f, 0.0f }; //moving shitttt
     movingBox.health = 2; //how many seconds HEAVY APPROXIMATION
