@@ -788,34 +788,40 @@ int main(void)
         //playerPosition.z = camera.position.z;
         
         //shots
-        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !aimlabs)
-        {
-            if(cameraMode == CAMERA_FIRST_PERSON){
-                Ray ray = GetMouseRay((Vector2){screenWidth / 2, screenHeight / 2}, camera);
-            shots += 1;
-            
-            burstLight.position = camera.position;
-            burstLight.enabled = true;
-            burstLightTimer = 0.0f;
-            UpdateLightValues(shader, burstLight);
-
-            for (auto& box : redBoxes)
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !aimlabs){
+            if (cameraMode == CAMERA_FIRST_PERSON)
             {
-                BoundingBox boxBounds = { (Vector3){ box.position.x - 0.5f, box.position.y - 0.5f, box.position.z - 0.5f },
-                                          (Vector3){ box.position.x + 0.5f, box.position.y + 0.5f, box.position.z + 0.5f } };
-                if (box.isActive && CheckRayCollisionBox(ray, boxBounds))
+                Ray ray = GetMouseRay((Vector2){screenWidth / 2, screenHeight / 2}, camera);
+                shots += 1;
+            
+                burstLight.position = camera.position;
+                burstLight.enabled = true;
+                burstLightTimer = 0.0f;
+                UpdateLightValues(shader, burstLight);
+            
+                
+                for (auto& box : redBoxes)
                 {
+                    BoundingBox boxBounds = { 
+                        (Vector3){ box.position.x - 0.5f, box.position.y - 0.5f, box.position.z - 0.5f },
+                        (Vector3){ box.position.x + 0.5f, box.position.y + 0.5f, box.position.z + 0.5f }
+                    };
+                
+                    if (box.isActive && CheckRayCollisionBox(ray, boxBounds))
+                    {
+                        
+                        box.isActive = false;
+                        hits += 1;
                     
-                    box.isActive = false;
-                    hits += 1;
+                        
+                        box.position = (Vector3){ GetRandomValue(-10, 10), GetRandomValue(2, 5), GetRandomValue(-10, 10) };
+                        box.isActive = true;
                     
-                    
-                    box.position = (Vector3){ GetRandomValue(-10, 10), GetRandomValue(2, 5), GetRandomValue(-10, 10) };
-                    box.isActive = true;
+                        
+                        break;
+                    }
                 }
             }
-            }
-            
         }
         if (burstLight.enabled) {
             burstLightTimer += GetFrameTime();
