@@ -312,7 +312,6 @@ static TextureCubemap GenTextureCubemap(Shader shader, Texture2D panorama, int s
 }
 
 
-
 int main(void)
 {
     //sujhydabjhgwvjghsadads
@@ -323,7 +322,9 @@ int main(void)
     Texture2D boxTexture = LoadTexture("assets/box.png");
     Texture2D groundTexture = LoadTexture("assets/box.png");
     Texture2D wallTexture = LoadTexture("assets/box.png");
-    
+    Image icon = LoadImage("assets/icon.png");
+    SetWindowIcon(icon);
+     
     
 
     Mesh cubeMesh = GenMeshCube(1.0f, 1.0f, 1.0f);
