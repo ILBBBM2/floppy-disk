@@ -197,7 +197,7 @@ endif
 #  -Wno-missing-braces  ignore invalid warning (GCC bug 53119)
 #  -D_DEFAULT_SOURCE    use with -std=c99 on Linux and PLATFORM_WEB, required for timespec
 #CFLAGS += -Wall -std=c++14 -Wl,--exclude-libs,ALL -D_DEFAULT_SOURCE -Wno-missing-braces -Os -g0 -fdata-sections -fno-inline -static -fno-exceptions -fwrapv -fomit-frame-pointer -s -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables
-CFLAGS += -Wall -std=c++14 -D_DEFAULT_SOURCE -Wno-missing-braces -Oz -fno-inline -static -s -Wl,-nmagic
+CFLAGS += -Wall -std=c++14 -D_DEFAULT_SOURCE -Wno-missing-braces -Oz -fno-inline -static -s -Wl,-nmagic -fdata-sections -Wl,--gc-sections -fdata-sections -fno-unroll-loops
 
 
 

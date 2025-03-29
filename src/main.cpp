@@ -1,6 +1,6 @@
 #include "raylib.h"
 #include "raymath.h"
-
+#include "rlgl.h"
 #define RLIGHTS_IMPLEMENTATION
 //#include "rlights.h"
 #if defined(PLATFORM_DESKTOP)
@@ -14,6 +14,7 @@
 #include <fstream>
 #include <string>
 #define MAX_LIGHTS  4
+#define cscolour (Color){ 32, 186, 166 }
 
 
 
@@ -34,7 +35,7 @@ bool CheckRayCollisionBox(Ray ray, BoundingBox box) {
     float tFar = fmin(fmin(t2.x, t2.y), t2.z);
     return tNear <= tFar && tFar >= 0.0f;
 }
-
+//sadassdasssssssssssssssssssssssssss
 std::vector<float> LoadAccuracy() {
     std::vector<float> accuracies;
     std::ifstream file("accuracy.txt");
@@ -229,9 +230,99 @@ static Light CreateLight(int type, Vector3 position, Vector3 target, Color color
 }
 
 
+static TextureCubemap GenTextureCubemap(Shader shader, Texture2D panorama, int size, int format)
+{
+    TextureCubemap cubemap = { 0 };
+
+    rlDisableBackfaceCulling();     // Disable backface culling to render inside the cube
+
+    // STEP 1: Setup framebuffer
+    //------------------------------------------------------------------------------------------
+    unsigned int rbo = rlLoadTextureDepth(size, size, true);
+    cubemap.id = rlLoadTextureCubemap(0, size, format, 1);
+
+    unsigned int fbo = rlLoadFramebuffer();
+    rlFramebufferAttach(fbo, rbo, RL_ATTACHMENT_DEPTH, RL_ATTACHMENT_RENDERBUFFER, 0);
+    rlFramebufferAttach(fbo, cubemap.id, RL_ATTACHMENT_COLOR_CHANNEL0, RL_ATTACHMENT_CUBEMAP_POSITIVE_X, 0);
+
+    // Check if framebuffer is complete with attachments (valid)
+    if (rlFramebufferComplete(fbo)) TraceLog(LOG_INFO, "FBO: [ID %i] Framebuffer object created successfully", fbo);
+    //------------------------------------------------------------------------------------------
+
+    // STEP 2: Draw to framebuffer
+    //------------------------------------------------------------------------------------------
+    // NOTE: Shader is used to convert HDR equirectangular environment map to cubemap equivalent (6 faces)
+    rlEnableShader(shader.id);
+
+    // Define projection matrix and send it to shader
+    Matrix matFboProjection = MatrixPerspective(90.0*DEG2RAD, 1.0, rlGetCullDistanceNear(), rlGetCullDistanceFar());
+    rlSetUniformMatrix(shader.locs[SHADER_LOC_MATRIX_PROJECTION], matFboProjection);
+
+    // Define view matrix for every side of the cubemap
+    Matrix fboViews[6] = {
+        MatrixLookAt((Vector3){ 0.0f, 0.0f, 0.0f }, (Vector3){  1.0f,  0.0f,  0.0f }, (Vector3){ 0.0f, -1.0f,  0.0f }),
+        MatrixLookAt((Vector3){ 0.0f, 0.0f, 0.0f }, (Vector3){ -1.0f,  0.0f,  0.0f }, (Vector3){ 0.0f, -1.0f,  0.0f }),
+        MatrixLookAt((Vector3){ 0.0f, 0.0f, 0.0f }, (Vector3){  0.0f,  1.0f,  0.0f }, (Vector3){ 0.0f,  0.0f,  1.0f }),
+        MatrixLookAt((Vector3){ 0.0f, 0.0f, 0.0f }, (Vector3){  0.0f, -1.0f,  0.0f }, (Vector3){ 0.0f,  0.0f, -1.0f }),
+        MatrixLookAt((Vector3){ 0.0f, 0.0f, 0.0f }, (Vector3){  0.0f,  0.0f,  1.0f }, (Vector3){ 0.0f, -1.0f,  0.0f }),
+        MatrixLookAt((Vector3){ 0.0f, 0.0f, 0.0f }, (Vector3){  0.0f,  0.0f, -1.0f }, (Vector3){ 0.0f, -1.0f,  0.0f })
+    };
+
+    rlViewport(0, 0, size, size);   // Set viewport to current fbo dimensions
+    
+    // Activate and enable texture for drawing to cubemap faces
+    rlActiveTextureSlot(0);
+    rlEnableTexture(panorama.id);
+
+    for (int i = 0; i < 6; i++)
+    {
+        // Set the view matrix for the current cube face
+        rlSetUniformMatrix(shader.locs[SHADER_LOC_MATRIX_VIEW], fboViews[i]);
+        
+        // Select the current cubemap face attachment for the fbo
+        // WARNING: This function by default enables->attach->disables fbo!!!
+        rlFramebufferAttach(fbo, cubemap.id, RL_ATTACHMENT_COLOR_CHANNEL0, RL_ATTACHMENT_CUBEMAP_POSITIVE_X + i, 0);
+        rlEnableFramebuffer(fbo);
+
+        // Load and draw a cube, it uses the current enabled texture
+        rlClearScreenBuffers();
+        rlLoadDrawCube();
+
+        // ALTERNATIVE: Try to use internal batch system to draw the cube instead of rlLoadDrawCube
+        // for some reason this method does not work, maybe due to cube triangles definition? normals pointing out?
+        // TODO: Investigate this issue...
+        //rlSetTexture(panorama.id); // WARNING: It must be called after enabling current framebuffer if using internal batch system!
+        //rlClearScreenBuffers();
+        //DrawCubeV(Vector3Zero(), Vector3One(), WHITE);
+        //rlDrawRenderBatchActive();
+    }
+    //------------------------------------------------------------------------------------------
+
+    // STEP 3: Unload framebuffer and reset state
+    //------------------------------------------------------------------------------------------
+    rlDisableShader();          // Unbind shader
+    rlDisableTexture();         // Unbind texture
+    rlDisableFramebuffer();     // Unbind framebuffer
+    rlUnloadFramebuffer(fbo);   // Unload framebuffer (and automatically attached depth texture/renderbuffer)
+
+    // Reset viewport dimensions to default
+    rlViewport(0, 0, rlGetFramebufferWidth(), rlGetFramebufferHeight());
+    rlEnableBackfaceCulling();
+    //------------------------------------------------------------------------------------------
+
+    cubemap.width = size;
+    cubemap.height = size;
+    cubemap.mipmaps = 1;
+    cubemap.format = format;
+
+    return cubemap;
+}
+
+
 
 int main(void)
 {
+    //sujhydabjhgwvjghsadads
     int screenWidth = 800;
     int screenHeight = 600; 
     bool aimlabs = false;
@@ -240,6 +331,8 @@ int main(void)
     Texture2D groundTexture = LoadTexture("assets/box.png");
     Texture2D wallTexture = LoadTexture("assets/box.png");
     
+    
+
     Mesh cubeMesh = GenMeshCube(1.0f, 1.0f, 1.0f);
     Model boxModel = LoadModelFromMesh(cubeMesh);
     Mesh wallMesh = GenMeshCube(1.0f, 10.0f, 100.0f);
@@ -335,19 +428,190 @@ int main(void)
     SetShaderValue(shader, GetShaderLocation(shader, "useTexEmissive"), &usage, SHADER_UNIFORM_INT);
     
     
+
+    // Load the floor texture
+    Vector2 walltexturetiling = (Vector2){2, 0.5f};
+    Texture2D floorTexture = LoadTexture("assets/road_a.png");
+
+    // Assign the floor texture to the wall models
+    wallModel.materials[0].maps[MATERIAL_MAP_ALBEDO].texture = floorTexture;
+    wallModel.materials[0].maps[MATERIAL_MAP_METALNESS].texture = LoadTexture("assets/road_mra.png");
+    wallModel.materials[0].maps[MATERIAL_MAP_NORMAL].texture = LoadTexture("assets/road_n.png");
+
+    wallModel2.materials[0].maps[MATERIAL_MAP_ALBEDO].texture = floorTexture;
+    wallModel2.materials[0].maps[MATERIAL_MAP_METALNESS].texture = LoadTexture("assets/road_mra.png");
+    wallModel2.materials[0].maps[MATERIAL_MAP_NORMAL].texture = LoadTexture("assets/road_n.png");
+
+    // Assign the same shader to the wall models
+    wallModel.materials[0].shader = shader;
+    wallModel2.materials[0].shader = shader;
+
+    // Set the material properties for the walls
+    wallModel.materials[0].maps[MATERIAL_MAP_ALBEDO].color = WHITE;
+    wallModel.materials[0].maps[MATERIAL_MAP_METALNESS].value = 0.0f;
+    wallModel.materials[0].maps[MATERIAL_MAP_ROUGHNESS].value = 0.0f;
+    wallModel.materials[0].maps[MATERIAL_MAP_OCCLUSION].value = 1.0f;
+    wallModel.materials[0].maps[MATERIAL_MAP_EMISSION].color = BLACK;
+
+    wallModel2.materials[0].maps[MATERIAL_MAP_ALBEDO].color = WHITE;
+    wallModel2.materials[0].maps[MATERIAL_MAP_METALNESS].value = 0.0f;
+    wallModel2.materials[0].maps[MATERIAL_MAP_ROUGHNESS].value = 0.0f;
+    wallModel2.materials[0].maps[MATERIAL_MAP_OCCLUSION].value = 1.0f;
+    wallModel2.materials[0].maps[MATERIAL_MAP_EMISSION].color = BLACK;
+
+
+
+    // Load skybox shader
+    Shader skyboxShader = LoadShader(TextFormat("assets/skybox.vs", GLSL_VERSION),
+    TextFormat("assets/skybox.fs", GLSL_VERSION));
+
+    // Load cube map texture for the skybox
+    Image skyboxImage = LoadImage("assets/box.png");
+    TextureCubemap skyboxTexture = LoadTextureCubemap(skyboxImage, CUBEMAP_LAYOUT_AUTO_DETECT);
+    UnloadImage(skyboxImage); // Unload the image after creating the cubemap texture
+    
+    // Create a cube mesh for the skybox
+    Mesh skyboxMesh = GenMeshCube(1.0f, 1.0f, 1.0f);
+    Model skyboxModel = LoadModelFromMesh(skyboxMesh);
+
+    // Assign the skybox texture and shader to the model
+    skyboxModel.materials[0].maps[MATERIAL_MAP_CUBEMAP].texture = skyboxTexture;
+    skyboxModel.materials[0].shader = skyboxShader;
+
+    Mesh cube = GenMeshCube(1.0f, 1.0f, 1.0f);
+    Model skybox = LoadModelFromMesh(cube);
+
+
+    bool useHDR = false;
+
+    // Load skybox shader and set required locations
+    // NOTE: Some locations are automatically set at shader loading
+    skybox.materials[0].shader = LoadShader(TextFormat("assets/skybox.vs", GLSL_VERSION),
+                                            TextFormat("assets/skybox.fs", GLSL_VERSION));
+
+    SetShaderValue(skybox.materials[0].shader, GetShaderLocation(skybox.materials[0].shader, "environmentMap"), (int[1]){ MATERIAL_MAP_CUBEMAP }, SHADER_UNIFORM_INT);
+    SetShaderValue(skybox.materials[0].shader, GetShaderLocation(skybox.materials[0].shader, "doGamma"), (int[1]) { useHDR ? 1 : 0 }, SHADER_UNIFORM_INT);
+    SetShaderValue(skybox.materials[0].shader, GetShaderLocation(skybox.materials[0].shader, "vflipped"), (int[1]){ useHDR ? 1 : 0 }, SHADER_UNIFORM_INT);
+
+    // Load cubemap shader and setup required shader locations
+    Shader shdrCubemap = LoadShader(TextFormat("assets/cubemap.vs", GLSL_VERSION),
+                                    TextFormat("assets/cubemap.fs", GLSL_VERSION));
+
+    SetShaderValue(shdrCubemap, GetShaderLocation(shdrCubemap, "equirectangularMap"), (int[1]){ 0 }, SHADER_UNIFORM_INT);
+
+    char skyboxFileName[256] = { 0 };
+    
+
+    Image skyboxImg = LoadImage("assets/skybox.png");
+    if (skyboxImg.data == NULL) {
+        TraceLog(LOG_ERROR, "Failed to load skybox texture!");
+    } else {
+        skybox.materials[0].maps[MATERIAL_MAP_CUBEMAP].texture = LoadTextureCubemap(skyboxImg, CUBEMAP_LAYOUT_AUTO_DETECT);
+        if (skybox.materials[0].maps[MATERIAL_MAP_CUBEMAP].texture.id == 0) {
+            std::cout<< "failed";
+        }
+        UnloadImage(skyboxImg);
+    }
+
+    skybox.materials[0].shader = LoadShader(TextFormat("assets/skybox.vs", GLSL_VERSION),
+                                            TextFormat("assets/skybox.fs", GLSL_VERSION));
+    if (skybox.materials[0].shader.id == 0) {
+        std::cout<< "failed";
+    }
+
+
+
     for (int i = 0; i < 5; i++) {
         redBoxes.push_back({ (Vector3){ GetRandomValue(-10, 10), GetRandomValue(2, 5), GetRandomValue(-10, 10) }, true });
     }
     DisableCursor();
     SetTargetFPS(200);
     float damageTimer = 0.0f;
+
+    skybox.materials[0].shader = LoadShader(TextFormat("assets/skybox.vs", GLSL_VERSION),
+    TextFormat("assets/skybox.fs", GLSL_VERSION));
     
+    SetShaderValue(skybox.materials[0].shader, 
+    GetShaderLocation(skybox.materials[0].shader, "environmentMap"), 
+    (int[1]){ MATERIAL_MAP_CUBEMAP }, 
+    SHADER_UNIFORM_INT);
+    
+    SetShaderValue(skybox.materials[0].shader, 
+    GetShaderLocation(skybox.materials[0].shader, "doGamma"), 
+    (int[1]){ useHDR ? 1 : 0 }, 
+    SHADER_UNIFORM_INT);
+    
+    SetShaderValue(skybox.materials[0].shader, 
+    GetShaderLocation(skybox.materials[0].shader, "vflipped"), 
+    (int[1]){ useHDR ? 1 : 0 }, 
+    SHADER_UNIFORM_INT);
+    Image cubemapImg = LoadImage("assets/sky.png");
+        skybox.materials[0].maps[MATERIAL_MAP_CUBEMAP].texture = LoadTextureCubemap(cubemapImg, CUBEMAP_LAYOUT_AUTO_DETECT);    // CUBEMAP_LAYOUT_PANORAMA
+        UnloadImage(cubemapImg);
+
+    
+    std::vector<Light> redBoxLights; // Store lights for red boxes
+    // Create a light for each red box
+    for (const auto& box : redBoxes) {
+        Light redBoxLight = CreateLight(LIGHT_POINT, box.position, (Vector3){ 0.0f, 0.0f, 0.0f }, (Color){ 255, 50, 50, 255 }, 9.0f, shader);
+        redBoxLights.push_back(redBoxLight);
+    }
+
+
     while (!WindowShouldClose())
     {
         float cameraPos[3] = {camera.position.x, camera.position.y, camera.position.z};
         SetShaderValue(shader, shader.locs[SHADER_LOC_VECTOR_VIEW], cameraPos, SHADER_UNIFORM_VEC3);
 
         UpdateLightValues(shader, lights[0]);
+
+
+        for (size_t i = 0; i < redBoxes.size(); ++i) {
+            if (redBoxes[i].isActive) {
+                redBoxLights[i].position = redBoxes[i].position;
+                UpdateLightValues(shader, redBoxLights[i]);
+            } else {
+                redBoxLights[i].enabled = 0; // Disable the light if the box is inactive
+                UpdateLightValues(shader, redBoxLights[i]);
+            }
+        }
+
+        if (IsFileDropped())
+        {
+            FilePathList droppedFiles = LoadDroppedFiles();
+
+            if (droppedFiles.count == 1)         // Only support one file dropped
+            {
+                if (IsFileExtension(droppedFiles.paths[0], ".png;.jpg;.hdr;.bmp;.tga"))
+                {
+                    // Unload current cubemap texture to load new one
+                    UnloadTexture(skybox.materials[0].maps[MATERIAL_MAP_CUBEMAP].texture);
+                    
+                    if (useHDR)
+                    {
+                        // Load HDR panorama (sphere) texture
+                        Texture2D panorama = LoadTexture(droppedFiles.paths[0]);
+
+                        // Generate cubemap from panorama texture
+                        skybox.materials[0].maps[MATERIAL_MAP_CUBEMAP].texture = GenTextureCubemap(shdrCubemap, panorama, 1024, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+                        
+                        UnloadTexture(panorama);    // Texture not required anymore, cubemap already generated
+                    }
+                    else
+                    {
+                        Image img = LoadImage(droppedFiles.paths[0]);
+                        skybox.materials[0].maps[MATERIAL_MAP_CUBEMAP].texture = LoadTextureCubemap(img, CUBEMAP_LAYOUT_AUTO_DETECT);
+                        UnloadImage(img);
+                    }
+
+                    TextCopy(skyboxFileName, droppedFiles.paths[0]);
+                }
+            }
+
+            UnloadDroppedFiles(droppedFiles);    // Unload filepaths from memory
+        }
+
+        
 
 
         if (IsKeyPressed(KEY_F4)) {
@@ -591,7 +855,7 @@ int main(void)
                 Box &movingBox = redBoxes[0];
                 if (movingBox.isActive) {
                     DrawModel(boxModel, movingBox.position, 1.0f, RED);
-                    DrawCubeWires(movingBox.position, 1.0f, 1.0f, 1.0f, DARKPURPLE);
+                    //DrawCubeWires(movingBox.position, 1.0f, 1.0f, 1.0f, DARKPURPLE);
                 }
             }
             if(isshowinggraph){
@@ -609,7 +873,11 @@ int main(void)
                 ClearBackground(RAYWHITE);
 
                 BeginMode3D(camera);
-                    BeginShaderMode(shader);
+                    rlDisableBackfaceCulling();
+                    rlDisableDepthMask();
+                        DrawModel(skybox, (Vector3){0, 0, 0}, 1.0f, WHITE);
+                    rlEnableBackfaceCulling();
+                    rlEnableDepthMask();
                     //DrawSphere((Vector3){ 0.0f, 10.0f, 0.0f }, 0.5f, YELLOW);
                     //for (int i = 0; i < MAX_LIGHTS; i++) {
                     // Draw the ground with a texture
@@ -631,12 +899,20 @@ int main(void)
 
                     //DrawSphereWires(lights[1].position, 0.2f, 8, 8, ColorAlpha(lights[1].color, 0.3f));
                     // Draw the walls with textures
-                    DrawModel(wallModel, (Vector3){ -16.0f, 2.5f, 0.0f }, 1.0f, WHITE); // Blue wall
-                    DrawModel(wallModel, (Vector3){ 16.0f, 2.5f, 0.0f }, 1.0f, WHITE); // Green wall
-                    DrawModel(wallModel2, (Vector3){ 0.0f, 2.5f, 16.0f }, 1.0f, WHITE); // Yellow wall
+
+
+                    //wall shit
+                    //SetShaderValue(shader, textureTilingLoc, &walltexturetiling, SHADER_UNIFORM_VEC2);
+                    //DrawModel(wallModel, (Vector3){ -16.0f, 2.5f, 0.0f }, 1.0f, WHITE); // Blue wall
+                    //DrawModel(wallModel, (Vector3){ 16.0f, 2.5f, 0.0f }, 1.0f, WHITE); // Green wall
+                    //DrawModel(wallModel2, (Vector3){ 0.0f, 2.5f, 16.0f }, 1.0f, WHITE); // Yellow wall
+
+
                     //the movidng pillar
-                    DrawCube(pillarPosition, pillarWidth, pillarHeight, pillarDepth, RED);
-                    DrawCubeWires(pillarPosition, pillarWidth, pillarHeight, pillarDepth, MAROON);
+
+                    //RIP THE MOVING PILLAR
+                    //DrawCube(pillarPosition, pillarWidth, pillarHeight, pillarDepth, RED);
+                    //DrawCubeWires(pillarPosition, pillarWidth, pillarHeight, pillarDepth, MAROON);
 
                     //player cube
                     //DrawCube(playerPosition, 0.5f, 0.5f, 0.5f, PURPLE);
@@ -648,7 +924,7 @@ int main(void)
                         if (box.isActive)
                         {
                             DrawModel(boxModel, box.position, 1.0f, WHITE);
-                            DrawCubeWires(box.position, 1.0f, 1.0f, 1.0f, DARKPURPLE);
+                            //DrawCubeWires(box.position, 1.0f, 1.0f, 1.0f, DARKPURPLE);
                         }
                     }
 
@@ -661,17 +937,17 @@ int main(void)
                 //crosshair
                 int centerX = screenWidth / 2;
                 int centerY = screenHeight / 2;
-                DrawLine(centerX - 10, centerY, centerX + 10, centerY, BLACK);
-                DrawLine(centerX, centerY - 10, centerX, centerY + 10, BLACK);
+                DrawLine(centerX - 10, centerY, centerX + 10, centerY, GRAY);
+                DrawLine(centerX, centerY - 10, centerX, centerY + 10, GRAY);
 
                 //info boxes
-                DrawText("john romero is my bitch", 15, 5, 20, BLACK);
-                DrawText(TextFormat("pos: (%06.3f, %06.3f, %06.3f)", camera.position.x, camera.position.y, camera.position.z), 610, 60, 10, BLACK);
-                DrawText(TextFormat("tar: (%06.3f, %06.3f, %06.3f)", camera.target.x, camera.target.y, camera.target.z), 610, 75, 10, BLACK);
-                DrawText(TextFormat("up: (%06.3f, %06.3f, %06.3f)", camera.up.x, camera.up.y, camera.up.z), 610, 90, 10, BLACK);
-                DrawText(TextFormat("sens: (%06.3f)", actualsens), 15, 45, 10, BLACK);
-                DrawText(TextFormat("accuracy: (%06.3f)", accuracy), 15, 55, 10, BLACK);
-                DrawText("press ESC to leave", 15, 30, 10, BLACK);
+                DrawText("john romero is my bitch", 15, 5, 20, WHITE);
+                DrawText(TextFormat("pos: (%06.3f, %06.3f, %06.3f)", camera.position.x, camera.position.y, camera.position.z), 610, 60, 10, WHITE);
+                DrawText(TextFormat("tar: (%06.3f, %06.3f, %06.3f)", camera.target.x, camera.target.y, camera.target.z), 610, 75, 10, WHITE);
+                DrawText(TextFormat("up: (%06.3f, %06.3f, %06.3f)", camera.up.x, camera.up.y, camera.up.z), 610, 90, 10, WHITE);
+                DrawText(TextFormat("sens: (%06.3f)", actualsens), 15, 45, 10, WHITE);
+                DrawText(TextFormat("accuracy: (%06.3f)", accuracy), 15, 55, 10, WHITE);
+                DrawText("press ESC to leave", 15, 30, 10, WHITE);
                 EndDrawing();
             }
             
