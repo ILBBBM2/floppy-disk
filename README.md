@@ -15,7 +15,7 @@ $$ |  $$ \$$$$$$$ $$ |     $$ |      $$ | $$ | $$ \$$$$$$$ \$$$$$$$ \$$$$$$$\   
 ```
 
 
-written in entirely c++ and GLSL. With the raylib openGL wrapper. 
+written in entirely c++ and GLSL. With the raylib openGL wrapper. NO external dependencies
 
 requirements:
 processor: intel core duo (2.2ghz+)
