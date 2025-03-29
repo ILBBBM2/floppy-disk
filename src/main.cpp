@@ -130,10 +130,10 @@ void SpawnMovingBox(std::vector<Box> &redBoxes, const Camera &camera) {
     redBoxes.clear();
     Box movingBox;
 
-    // Calculate the player's forward direction
+    //calculate the player's forward direction
     Vector3 forward = Vector3Normalize(Vector3Subtract(camera.target, camera.position));
 
-    // Keep trying to spawn the box until it is within the player's FOV
+    //keep trying to spawn the box until it is within the player's FOV
     bool validSpawn = false;
     while (!validSpawn) {
         movingBox.position = (Vector3){
