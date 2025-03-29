@@ -477,8 +477,7 @@ int main(void)
 
     bool useHDR = false;
 
-    // Load skybox shader and set required locations
-    // NOTE: Some locations are automatically set at shader loading
+    
     skybox.materials[0].shader = LoadShader(TextFormat("assets/skybox.vs", GLSL_VERSION),
                                             TextFormat("assets/skybox.fs", GLSL_VERSION));
 
@@ -486,7 +485,7 @@ int main(void)
     SetShaderValue(skybox.materials[0].shader, GetShaderLocation(skybox.materials[0].shader, "doGamma"), (int[1]) { useHDR ? 1 : 0 }, SHADER_UNIFORM_INT);
     SetShaderValue(skybox.materials[0].shader, GetShaderLocation(skybox.materials[0].shader, "vflipped"), (int[1]){ useHDR ? 1 : 0 }, SHADER_UNIFORM_INT);
 
-    // Load cubemap shader and setup required shader locations
+    
     Shader shdrCubemap = LoadShader(TextFormat("assets/cubemap.vs", GLSL_VERSION),
                                     TextFormat("assets/cubemap.fs", GLSL_VERSION));
 
@@ -543,8 +542,8 @@ int main(void)
         UnloadImage(cubemapImg);
 
     
-    std::vector<Light> redBoxLights; // Store lights for red boxes
-    // Create a light for each red box
+    std::vector<Light> redBoxLights; 
+    
     for (const auto& box : redBoxes) {
         Light redBoxLight = CreateLight(LIGHT_POINT, box.position, (Vector3){ 0.0f, 0.0f, 0.0f }, (Color){ 255, 50, 50, 255 }, 9.0f, shader);
         redBoxLights.push_back(redBoxLight);
@@ -564,7 +563,7 @@ int main(void)
                 redBoxLights[i].position = redBoxes[i].position;
                 UpdateLightValues(shader, redBoxLights[i]);
             } else {
-                redBoxLights[i].enabled = 0; // Disable the light if the box is inactive
+                redBoxLights[i].enabled = 0; 
                 UpdateLightValues(shader, redBoxLights[i]);
             }
         }
@@ -573,22 +572,22 @@ int main(void)
         {
             FilePathList droppedFiles = LoadDroppedFiles();
 
-            if (droppedFiles.count == 1)         // Only support one file dropped
+            if (droppedFiles.count == 1)         
             {
                 if (IsFileExtension(droppedFiles.paths[0], ".png;.jpg;.hdr;.bmp;.tga"))
                 {
-                    // Unload current cubemap texture to load new one
+                    
                     UnloadTexture(skybox.materials[0].maps[MATERIAL_MAP_CUBEMAP].texture);
                     
                     if (useHDR)
                     {
-                        // Load HDR panorama (sphere) texture
+                        
                         Texture2D panorama = LoadTexture(droppedFiles.paths[0]);
 
-                        // Generate cubemap from panorama texture
+                        
                         skybox.materials[0].maps[MATERIAL_MAP_CUBEMAP].texture = GenTextureCubemap(shdrCubemap, panorama, 1024, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
                         
-                        UnloadTexture(panorama);    // Texture not required anymore, cubemap already generated
+                        UnloadTexture(panorama);    
                     }
                     else
                     {
@@ -957,7 +956,11 @@ int main(void)
     //unload shit to save mem :)
     UnloadTexture(boxTexture); 
     UnloadModel(boxModel); 
-    SaveAccuracy(accuracy);
+
+    if(!accuracy == 100){
+        SaveAccuracy(accuracy);
+    }
+    
     CloseWindow();
 
     return 0;
